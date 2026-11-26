@@ -34,7 +34,9 @@ interface PlantInfo {
 }
 
 interface KindwiseResponse {
-  result?: {
+  result?: { 
+    crop?: { suggestions?: PlantInfo[]};
+    disease?: { suggestions?: DiseaseInfo[] };
     classification?: {
       suggestions?: DiseaseInfo[];
     };
@@ -146,13 +148,16 @@ export async function POST(req: NextRequest) {
 
     // Disease suggestions (crop doctor uses result.crop_doc.disease OR result.classification.suggestions)
     const diseaseSuggestions =
+      r?.disease?.suggestions ||
       r?.crop_doc?.disease?.suggestions ||
       r?.plant?.disease?.suggestions ||
       r?.classification?.suggestions ||
       [];
 
     const plantSuggestions =
-      r?.crop_doc?.plant?.suggestions || r?.plant?.suggestions || [];
+       r?.crop?.suggestions ||
+      r?.crop_doc?.plant?.suggestions || 
+      r?.plant?.suggestions || [];
 
     const topDisease: DiseaseInfo | undefined = diseaseSuggestions[0];
     const topPlant: PlantInfo | undefined =
