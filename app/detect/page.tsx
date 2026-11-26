@@ -298,7 +298,7 @@ export default function DetectPage() {
                       )}
                     </div>
                     <h3 className="font-display text-lg font-bold">{result.plant.name}</h3>
-                    {result.plant.commonNames.length > 0 && (
+                    {(result.plant.commonNames ||[]).length > 0 && (
                       <p className="text-sm text-muted-foreground">
                         {result.plant.commonNames.join(', ')}
                       </p>
@@ -312,13 +312,13 @@ export default function DetectPage() {
                   </div>
                 )}
 
-                {result.diseases.length > 0 && (
+                {(result.diseases || []).length > 0 && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-semibold">
                       <HeartPulse className="h-4 w-4 text-destructive" />
                       {result.diseases.length > 1 ? 'Possible conditions' : 'Detected condition'}
                     </div>
-                    {result.diseases.map((d, i) => (
+                    {(result.diseases || []).map((d, i) => (
                       <div
                         key={i}
                         className={cn(
