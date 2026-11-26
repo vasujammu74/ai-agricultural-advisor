@@ -1,17 +1,9 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import { LanguageProvider } from '@/components/language-provider';
 import { Navbar } from '@/components/navbar';
 import { Footer } from '@/components/footer';
 import { Toaster } from '@/components/ui/toaster';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
-const display = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['500', '600', '700', '800'],
-  variable: '--font-display',
-});
 
 export const metadata: Metadata = {
   title: 'AI Agricultural Advisor — Multilingual AI Assistant for Farmers',
@@ -33,10 +25,19 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} ${display.variable} font-sans antialiased`}>
+      <body
+        className="font-sans antialiased"
+        style={{
+          fontFamily: 'Arial, Helvetica, sans-serif',
+        }}
+      >
         <LanguageProvider>
           <div className="relative flex min-h-screen flex-col">
             <Navbar />
