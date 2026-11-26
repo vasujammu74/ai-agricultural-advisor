@@ -1,0 +1,19 @@
+{
+  "name": "AI Agricultural Advisor",
+  "short_name": "AI Agri Advisor",
+  "description": "Multilingual AI Assistant for Farmers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7faf6",
+  "theme_color": "#1f6b3a",
+  "orientation": "portrait-primary",
+  "categories": ["agriculture", "education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
