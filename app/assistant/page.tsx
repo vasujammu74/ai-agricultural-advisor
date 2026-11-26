@@ -2,17 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Send,
-  Mic,
-  Square,
-  Volume2,
-  VolumeX,
-  Trash2,
-  Bot,
-  User,
-  Loader2,
-  AlertCircle,
-  Info,
+  Send, Mic, Square, Volume2, VolumeX, Trash2,
+  Bot, User, Loader2, AlertCircle, Info,
 } from 'lucide-react';
 import { useLanguage } from '@/components/language-provider';
 import { Button } from '@/components/ui/button';
@@ -29,15 +20,16 @@ interface Message {
   createdAt: string;
 }
 
-// Minimal typings for the Web Speech API (not in lib.dom by default).
 interface SpeechRecognitionResultLike {
   0: { transcript: string };
   isFinal: boolean;
 }
+
 interface SpeechRecognitionEventLike {
   resultIndex: number;
   results: { length: number; [i: number]: SpeechRecognitionResultLike };
 }
+
 interface SpeechRecognitionLike {
   lang: string;
   continuous: boolean;
@@ -49,88 +41,96 @@ interface SpeechRecognitionLike {
   onerror: ((e: unknown) => void) | null;
   onend: (() => void) | null;
 }
+
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
 function getRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === 'undefined') return null;
+
   const w = window as unknown as {
     SpeechRecognition?: SpeechRecognitionCtor;
     webkitSpeechRecognition?: SpeechRecognitionCtor;
   };
+
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
 export default function AssistantPage() {
   const { t, lang, language } = useLanguage();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
-  const [voiceSupported] = useState<boolean>(() => Boolean(getRecognitionCtor()));
+  const [voiceSupported] = useState(() => Boolean(getRecognitionCtor()));
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load chat history from Supabase.
   useEffect(() => {
     let active = true;
+
     (async () => {
       if (!isSupabaseConfigured) return;
+
       const { data } = await supabase
         .from('chat_messages')
         .select('id, role, content, created_at')
         .order('created_at', { ascending: true })
         .limit(50);
-      if (active && data && data.length) {
-        setMessages(
-          data.map((d) => ({
-            id: d.id as string,
-            role: d.role as 'user' | 'assistant',
-            content: d.content as string,
-            createdAt: d.created_at as string,
-          }))
-        );
+
+      if (active && data?.length) {
+        setMessages(data.map((d) => ({
+          id: d.id as string,
+          role: d.role as 'user' | 'assistant',
+          content: d.content as string,
+          createdAt: d.created_at as string,
+        })));
       }
     })();
+
     return () => {
       active = false;
     };
   }, []);
 
-  // Welcome message when empty.
   useEffect(() => {
     if (messages.length === 0) {
-      setMessages([
-        {
-          id: 'welcome',
-          role: 'assistant',
-          content: t('assistant.welcome'),
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      setMessages([{
+        id: 'welcome',
+        role: 'assistant',
+        content: t('assistant.welcome'),
+        createdAt: new Date().toISOString(),
+      }]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang]);
 
-  // Auto-scroll on new messages.
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
 
-  const persist = useCallback(async (role: 'user' | 'assistant', content: string) => {
-    if (!isSupabaseConfigured) return;
-    try {
-      await supabase.from('chat_messages').insert({ role, content, language: lang });
-    } catch {
-      /* non-fatal */
-    }
-  }, [lang]);
+  const persist = useCallback(
+    async (role: 'user' | 'assistant', content: string) => {
+      if (!isSupabaseConfigured) return;
+      try {
+        await supabase.from('chat_messages').insert({
+          role,
+          content,
+          language: lang,
+        });
+      } catch {
+        // Saving history is non-fatal.
+      }
+    },
+    [lang]
+  );
 
   const send = useCallback(
     async (text?: string) => {
@@ -146,7 +146,9 @@ export default function AssistantPage() {
         content,
         createdAt: new Date().toISOString(),
       };
+
       const history = messages.filter((m) => m.id !== 'welcome').slice(-8);
+
       setMessages((prev) => [...prev, userMsg]);
       setLoading(true);
 
@@ -157,39 +159,57 @@ export default function AssistantPage() {
           body: JSON.stringify({
             message: content,
             language: lang,
-            history: history.map((m) => ({ role: m.role, content: m.content })),
+            history: history.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
           }),
         });
 
-        const data = await res.json();
+        const responseText = await res.text();
+        let data: any;
+
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          console.error('Non-JSON API response:', responseText);
+          throw new Error(
+            `Server returned an invalid response (${res.status}). Please try again.`
+          );
+        }
+
         if (!res.ok) {
           throw new Error(data?.error || `Request failed (${res.status})`);
         }
 
-        const answer: string = data.answer || '';
-        const demo: boolean = Boolean(data.demo);
+        const answer: string =
+          data.answer || data.reply || data.response || data.message || '';
+
+        if (!answer.trim()) {
+          throw new Error('The AI returned an empty response. Please try again.');
+        }
+
         const aiMsg: Message = {
           id: `a-${Date.now()}`,
           role: 'assistant',
           content: answer,
-          demo,
+          demo: Boolean(data.demo),
           createdAt: new Date().toISOString(),
         };
+
         setMessages((prev) => [...prev, aiMsg]);
         void persist('user', content);
         void persist('assistant', answer);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
         setError(msg);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `e-${Date.now()}`,
-            role: 'assistant',
-            content: t('assistant.error'),
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+
+        setMessages((prev) => [...prev, {
+          id: `e-${Date.now()}`,
+          role: 'assistant',
+          content: t('assistant.error'),
+          createdAt: new Date().toISOString(),
+        }]);
       } finally {
         setLoading(false);
         inputRef.current?.focus();
@@ -200,6 +220,7 @@ export default function AssistantPage() {
 
   const toggleMic = useCallback(() => {
     const Ctor = getRecognitionCtor();
+
     if (!Ctor) {
       setError(t('assistant.voiceUnsupported'));
       return;
@@ -211,23 +232,26 @@ export default function AssistantPage() {
     }
 
     setError(null);
+
     const recognition = new Ctor();
     recognition.lang = language.bcp47;
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.onresult = (e: SpeechRecognitionEventLike) => {
+
+    recognition.onresult = (e) => {
       const transcript = e.results[e.resultIndex]?.[0]?.transcript || '';
-      if (transcript.trim()) {
-        send(transcript.trim());
-      }
+      if (transcript.trim()) void send(transcript.trim());
     };
+
     recognition.onerror = () => {
       setListening(false);
       setError(t('assistant.error'));
     };
+
     recognition.onend = () => setListening(false);
 
     recognitionRef.current = recognition;
+
     try {
       recognition.start();
       setListening(true);
@@ -241,20 +265,21 @@ export default function AssistantPage() {
       audioRef.current.pause();
       audioRef.current = null;
     }
+
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+
     setSpeakingId(null);
   }, []);
 
-  // Stop any audio on unmount.
   useEffect(() => {
     return () => {
       stopSpeaking();
       try {
         recognitionRef.current?.abort();
       } catch {
-        /* ignore */
+        // Ignore cleanup errors.
       }
     };
   }, [stopSpeaking]);
@@ -266,12 +291,15 @@ export default function AssistantPage() {
         setSpeakingId(null);
         return;
       }
+
       window.speechSynthesis.cancel();
+
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = language.bcp47;
       utter.rate = 0.95;
       utter.onend = () => setSpeakingId(null);
       utter.onerror = () => setSpeakingId(null);
+
       window.speechSynthesis.speak(utter);
     },
     [language.bcp47]
@@ -279,28 +307,29 @@ export default function AssistantPage() {
 
   const speak = useCallback(
     async (msg: Message) => {
-      // Toggle off if already speaking this message.
       if (speakingId === msg.id) {
         stopSpeaking();
         return;
       }
-      stopSpeaking();
 
-      // Try the Sarvam TTS endpoint first. If it's unavailable (demo mode),
-      // fall back to the browser's built-in SpeechSynthesis so the button
-      // still does something useful.
+      stopSpeaking();
       setSpeakingId(msg.id);
+
       try {
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: msg.content, language: lang }),
+          body: JSON.stringify({
+            text: msg.content,
+            language: lang,
+          }),
         });
 
         if (res.ok) {
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
+
           audioRef.current = audio;
           audio.onended = () => {
             setSpeakingId(null);
@@ -310,11 +339,11 @@ export default function AssistantPage() {
             setSpeakingId(null);
             URL.revokeObjectURL(url);
           };
+
           await audio.play();
           return;
         }
 
-        // Sarvam not configured — fall back to browser SpeechSynthesis.
         if (res.status === 501) {
           browserSpeak(msg.content);
           return;
@@ -324,29 +353,29 @@ export default function AssistantPage() {
         throw new Error(data?.error || `TTS failed (${res.status})`);
       } catch (err) {
         setSpeakingId(null);
-        const msg2 = err instanceof Error ? err.message : 'TTS error';
-        setError(msg2);
+        setError(err instanceof Error ? err.message : 'TTS error');
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [speakingId, lang]
+    [speakingId, lang, stopSpeaking, browserSpeak]
   );
 
   const clearChat = useCallback(async () => {
-    setMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content: t('assistant.welcome'),
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    setMessages([{
+      id: 'welcome',
+      role: 'assistant',
+      content: t('assistant.welcome'),
+      createdAt: new Date().toISOString(),
+    }]);
+
     stopSpeaking();
+
     if (isSupabaseConfigured) {
       try {
-        await supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('chat_messages')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
       } catch {
-        /* non-fatal */
+        // Ignore database cleanup errors.
       }
     }
   }, [t, stopSpeaking]);
@@ -364,17 +393,21 @@ export default function AssistantPage() {
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
           <Bot className="h-6 w-6" />
         </div>
+
         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
           {t('assistant.title')}
         </h1>
-        <p className="mx-auto mt-2 max-w-xl text-muted-foreground">{t('assistant.subtitle')}</p>
+
+        <p className="mx-auto mt-2 max-w-xl text-muted-foreground">
+          {t('assistant.subtitle')}
+        </p>
+
         <Badge variant="secondary" className="mt-3 gap-1.5 bg-secondary">
           {language.nativeLabel} · {language.label}
         </Badge>
       </div>
 
       <div className="flex h-[65vh] min-h-[460px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border/60 bg-secondary/40 px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm font-medium">
             <span className="relative flex h-2.5 w-2.5">
@@ -383,6 +416,7 @@ export default function AssistantPage() {
             </span>
             {t('assistant.history')}
           </div>
+
           <Button
             variant="ghost"
             size="sm"
@@ -394,7 +428,6 @@ export default function AssistantPage() {
           </Button>
         </div>
 
-        {/* Messages */}
         <div
           ref={scrollRef}
           className="scrollbar-thin flex-1 space-y-4 overflow-y-auto bg-gradient-to-b from-background to-secondary/20 p-4"
@@ -412,8 +445,11 @@ export default function AssistantPage() {
                     : 'bg-accent/20 text-accent-foreground'
                 )}
               >
-                {m.role === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                {m.role === 'user'
+                  ? <User className="h-4 w-4" />
+                  : <Bot className="h-4 w-4" />}
               </div>
+
               <div
                 className={cn(
                   'group max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
@@ -423,16 +459,18 @@ export default function AssistantPage() {
                 )}
               >
                 <p className="whitespace-pre-wrap">{m.content}</p>
+
                 {m.demo && (
                   <div className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                     <Info className="mt-0.5 h-3 w-3 shrink-0" />
                     <span>{t('assistant.demo')}</span>
                   </div>
                 )}
+
                 {m.role === 'assistant' && m.id !== 'welcome' && (
                   <button
                     type="button"
-                    onClick={() => speak(m)}
+                    onClick={() => void speak(m)}
                     className="mt-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
                     aria-label={speakingId === m.id ? t('assistant.stop') : t('assistant.speak')}
                   >
@@ -458,6 +496,7 @@ export default function AssistantPage() {
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent-foreground">
                 <Bot className="h-4 w-4" />
               </div>
+
               <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm border border-border/60 bg-card px-4 py-3 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 {t('assistant.thinking')}
@@ -473,7 +512,6 @@ export default function AssistantPage() {
           )}
         </div>
 
-        {/* Input */}
         <div className="border-t border-border/60 bg-card p-3">
           <div className="flex items-end gap-2">
             <Button
@@ -489,7 +527,9 @@ export default function AssistantPage() {
               title={voiceSupported ? t('assistant.mic') : t('assistant.voiceUnsupported')}
               disabled={!voiceSupported && !listening}
             >
-              {listening ? <Square className="h-4 w-4" /> : <Mic className="h-5 w-5" />}
+              {listening
+                ? <Square className="h-4 w-4" />
+                : <Mic className="h-5 w-5" />}
             </Button>
 
             <Textarea
@@ -506,14 +546,17 @@ export default function AssistantPage() {
             <Button
               type="button"
               size="icon"
-              onClick={() => send()}
+              onClick={() => void send()}
               disabled={!input.trim() || loading}
               className="h-11 w-11 shrink-0 rounded-full bg-primary"
               aria-label={t('assistant.send')}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-5 w-5" />}
+              {loading
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Send className="h-5 w-5" />}
             </Button>
           </div>
+
           {listening && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
               <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
