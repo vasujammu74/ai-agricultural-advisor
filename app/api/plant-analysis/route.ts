@@ -8,17 +8,23 @@ interface AnalyzeBody {
   image: string; // data URL
   language?: string;
 }
-
 interface DiseaseInfo {
   name: string;
   common_names?: string[];
   probability: number;
-  disease_details?: {
+  details?: {
     description?: string;
-    treatment?: { name: string }[] | string;
-    prevention?: { name: string }[] | string;
     symptoms?: string;
+    treatment?: {
+      biological?: string[];
+      chemical?: string[];
+      prevention?: string[];
+    };
   };
+  is_healthy?: boolean;
+  similar_images?: { url: string }[];
+}
+
   is_healthy?: boolean;
   similar_images?: { url: string }[];
 }
@@ -110,8 +116,8 @@ export async function POST(req: NextRequest) {
 
     // Try the Crop Doctor endpoint (handles plant + disease together).
     const endpoints = [
-      'https://crop.kindwise.com/api/v1/identification?language=en&details=taxonomy,common_names,description,url,image,plant_details,disease_details',
-      'https://api.kindwise.com/v1/identification?language=en&details=taxonomy,common_names,description,url,image,plant_details,disease_details',
+      'https://crop.kindwise.com/api/v1/identification?language=en&details=taxonomy,common_names,description,url,image,treatment,symptoms,severity,spreading',
+      'https://api.kindwise.com/v1/identification?language=en&details=taxonomy,common_names,description,url,image,treatment,symptoms,severity,spreading',
     ];
 
     let lastError = '';
@@ -184,10 +190,14 @@ export async function POST(req: NextRequest) {
       commonNames: d.common_names || [],
       probability: Math.round((d.probability ?? 0) * 100),
       isHealthy: Boolean(d.is_healthy),
-      description: d.disease_details?.description,
-      symptoms: d.disease_details?.symptoms,
-      treatment: fmtList(d.disease_details?.treatment),
-      prevention: fmtList(d.disease_details?.prevention),
+      description: d.details?.description,
+      symptoms: d.details?.symptoms,
+      treatment: fmtList([
+  ...(d.details?.treatment?.biological || []),
+  ...(d.details?.treatment?.chemical || []),
+]),
+
+      prevention: fmtList(d.details?.treatment?.prevention),
       similarImage: d.similar_images?.[0]?.url,
     }));
 
